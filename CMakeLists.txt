@@ -5,6 +5,7 @@ project(lidar_subscriber)
 # add_compile_options(-std=c++11)
 
 set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_C C_STANDARD 11)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 ## Find catkin macros and libraries
@@ -23,7 +24,35 @@ find_package(catkin REQUIRED COMPONENTS
 ## System dependencies are found with CMake's conventions
 find_package(Boost REQUIRED COMPONENTS system filesystem)
 
+# CUDA support
+find_package(CUDA REQUIRED)
+enable_language(CUDA)
 
+# Find Open3D with GPU support
+# Set the path to the Open3D library with GPU support
+set(Open3D_DIR "/home/kenji/open3d_install/lib/cmake/Open3D")
+find_package(Open3D REQUIRED)
+
+# ソースディレクトリ、ビルドディレクトリ、インクルードディレクトリの設定
+set(BUILD_DIR /home/kenji/quiche/target/release)
+set(INCLUDE_DIR /home/kenji/quiche/quiche/include)
+
+# コンパイルオプションとリンクオプションの設定
+include_directories(${INCLUDE_DIR})
+
+set(CMAKE_BUILD_TYPE Release)
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native -mtune=native")
+set(CMAKE_C_FLAGS_RELEASE "${CMAKE_C_FLAGS_RELEASE} -O3 -march=native -mtune=native")
+
+# ライブラリディレクトリの設定
+find_library(LIBCRYPTO crypto)
+find_library(LIBSSL ssl)
+set(LIBQUICHE ${BUILD_DIR}/libquiche.a)
+
+link_directories(${BUILD_DIR})
+
+# 使用するライブラリの設定
+set(LIBS ${LIBQUICHE} ev dl pthread m ${LIBCRYPTO} ${LIBSSL})
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -126,8 +155,8 @@ catkin_package(
 include_directories(
 # include
   ${catkin_INCLUDE_DIRS}
-  #${Open3D_INCLUDE_DIRS}
-  #${CUDA_INCLUDE_DIRS}
+  ${Open3D_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_DIRS}
   ${Boost_INCLUDE_DIRS}
 )
 
@@ -216,19 +245,30 @@ include_directories(
 ## Add folders to be run by python nosetests
 # catkin_add_nosetests(test)
 
-add_executable(lidar_subscriber src/subscriber.cpp)
+add_executable(lidar_subscriber src/subscriber.cpp src/downsample.cpp src/transform_data.cpp src/send_data.c)
 
 target_link_libraries(lidar_subscriber
   ${catkin_LIBRARIES}
-  #${Open3D_LIBRARIES}
+  ${Open3D_LIBRARIES}
   Boost::system
   Boost::filesystem
   #CUDA::cudart
   #${CUDA_LIBRARIES}
   pthread
   rt
+  ${LIBS}
 )
+
+# Include directories
+target_include_directories(lidar_subscriber PRIVATE
+  ${Open3D_INCLUDE_DIRS}
+  ${CUDA_INCLUDE_DIRS}
+)
+
+# RPATHを設定して実行時にライブラリを見つけられるようにする
+set_target_properties(lidar_subscriber PROPERTIES BUILD_RPATH ${BUILD_DIR})
 
 ## Additional configurations for linking
 #target_compile_definitions(lidar_subscriber PRIVATE ${Open3D_DEFINITIONS})
 add_dependencies(lidar_subscriber ${${PROJECT_NAME}_EXPORTED_TARGETS} ${catkin_EXPORTED_TARGETS})
+target_compile_definitions(lidar_subscriber PRIVATE ${Open3D_DEFINITIONS})
