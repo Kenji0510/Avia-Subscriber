@@ -9,6 +9,7 @@
 #include <fcntl.h>
 #include <errno.h>
 #include <time.h>
+#include <math.h>
 
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -81,6 +82,13 @@ static void flush_egress(struct ev_loop *loop, struct conn_io *conn_io) {
 
     double t = quiche_conn_timeout_as_nanos(conn_io->conn) / 1e9f;
     //fprintf(stderr, "timeout in %f\n", t);
+
+    // When timeout time was set 0, To prevent stack for send process, 
+    const double epsilon = 1e-7;
+    if (fabs(t) < epsilon) {
+        fprintf(stderr, "timeout in %f\n", t);
+        ev_break(EV_A_ EVBREAK_ONE);
+    }
     conn_io->timer.repeat = t;
     ev_timer_again(loop, &conn_io->timer);
 }
@@ -403,8 +411,10 @@ int send_data(const char* ip_addr, const char* port_num, data_packet* packet_ptr
     
     double elapsed_time = (end.tv_sec - start.tv_sec) + (end.tv_nsec - start.tv_nsec) / 1e9;
     printf("Data transfer took %.3f seconds\n", elapsed_time);
-
+    
+    ev_io_stop(loop, &watcher);
     ev_break(loop, EVBREAK_ALL);
+    ev_loop_destroy(loop);
 
     printf("Unix time: %ld\n", packet_ptr->unix_time);
     printf("Num points: %ld\n", packet_ptr->num_points);
@@ -412,7 +422,7 @@ int send_data(const char* ip_addr, const char* port_num, data_packet* packet_ptr
 
 
     //free(conn_io->file_data);
-    free(conn_io);
+    //free(conn_io);
 
     freeaddrinfo(peer);
 

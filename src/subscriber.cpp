@@ -11,10 +11,18 @@
 #include <sstream>
 #include <open3d/Open3D.h>
 #include <tf/transform_datatypes.h>
+#include <vector>
+#include <eigen3/Eigen/Dense>
 
 #include "downsample.hpp"
 #include "send_data.h"
 #include "transform_data.hpp"
+
+
+data_packet *data_packet_ptr = NULL;
+const int MAX_DATA_SIZE = 100;
+Eigen::Vector3d integrated_angle(0.0, 0.0, 0.0);
+const double time_interval = 1.0 / 200.0;
 
 
 std::string createTimestampedFilename(std::string path) {
@@ -37,9 +45,11 @@ void Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
     auto source = std::make_shared<open3d::geometry::PointCloud>();
     auto source_downsampled = std::make_shared<open3d::geometry::PointCloud>();
 
-    data_packet *data_packet_ptr = (data_packet*)malloc(sizeof(data_packet));
-    data_packet_ptr->float_array_ptr = (double*)malloc(sizeof(double) * NUM_FLOATS * 3);
-
+    if (data_packet_ptr == NULL) {
+        data_packet_ptr = (data_packet*)malloc(sizeof(data_packet));
+        data_packet_ptr->float_array_ptr = (double*)malloc(sizeof(double) * NUM_FLOATS * 3);
+    }
+    
     // Convert ROS PointCloud2 to PCL PointCloud
     pcl::PointCloud<pcl::PointXYZ>::Ptr pcl_cloud(new pcl::PointCloud<pcl::PointXYZ>());
     pcl::fromROSMsg(*cloud_msg, *pcl_cloud);
@@ -59,18 +69,25 @@ void Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
     transform_data(source_downsampled, data_packet_ptr);
 
     // Send the point cloud data to the server
-    send_data("180.145.242.113", "1234", data_packet_ptr);
-
-    sleep(1);
+    int result = send_data("180.145.242.113", "1234", data_packet_ptr);
 
     // Free allocated memory
-    free(data_packet_ptr->float_array_ptr);
-    free(data_packet_ptr);
+    //free(data_packet_ptr->float_array_ptr);
+    //free(data_packet_ptr);
 
     // Timesstamped filename
     //std::string file_path = "/home/kenji/pcd";
     std::string file_path = "/home/kenji/pcd/downsampled_pcd";
     std::string file_name = createTimestampedFilename(file_path);
+
+    ROS_INFO("IMU Angular Velocity Data (Degree):");
+    /*
+    for (int i = 0; i < current_index; i++) {
+        ROS_INFO("Index: [%d], Angular Velocity: [%f, %f, %f]", i, angular_velocity_x_array[i], angular_velocity_y_array[i], angular_velocity_z_array[i]);
+    }
+    current_index = 0;
+    */
+    ROS_INFO("Integrated Angle: [%f, %f, %f]", integrated_angle(0), integrated_angle(1), integrated_angle(2));
 
     // Save to a PCD file
     //pcl::io::savePCDFileASCII(fileName, *pcl_cloud);
@@ -106,14 +123,33 @@ void imu_callback(const sensor_msgs::ImuConstPtr& imu_msg) {
             imu_msg->angular_velocity.x, imu_msg->angular_velocity.y, imu_msg->angular_velocity.z,
             imu_msg->linear_acceleration.x, imu_msg->linear_acceleration.y, imu_msg->linear_acceleration.z);
     */
+    /*
     double angular_velocity_x = imu_msg->angular_velocity.x * 180 / M_PI;
     double angular_velocity_y = imu_msg->angular_velocity.y * 180 / M_PI;
     double angular_velocity_z = imu_msg->angular_velocity.z * 180 / M_PI;
 
-    ROS_INFO("IMU Data - Angular Velocity: [%f, %f, %f], Angular Velocity: [%f, %f, %f], Linear Acceleration: [%f, %f, %f]",
+    if (current_index < MAX_DATA_SIZE) {
+        angular_velocity_x_array[current_index] = angular_velocity_x;
+        angular_velocity_y_array[current_index] = angular_velocity_y;
+        angular_velocity_z_array[current_index] = angular_velocity_z;
+        current_index++;
+    } 
+    */
+
+    Eigen::Vector3d angular_velocity(
+            imu_msg->angular_velocity.x * 180 / M_PI,
+            imu_msg->angular_velocity.y * 180 / M_PI,
+            imu_msg->angular_velocity.z * 180 / M_PI
+    );
+
+    integrated_angle += angular_velocity * time_interval;
+
+    /*
+    ROS_INFO("IMU Data - Angular Velocity(Degree): [%f, %f, %f], Angular Velocity: [%f, %f, %f], Linear Acceleration: [%f, %f, %f]",
         angular_velocity_x, angular_velocity_y, angular_velocity_z,
         imu_msg->angular_velocity.x, imu_msg->angular_velocity.y, imu_msg->angular_velocity.z,
         imu_msg->linear_acceleration.x, imu_msg->linear_acceleration.y, imu_msg->linear_acceleration.z);
+    */
 }
 
 int main(int argc, char** argv) {
@@ -124,10 +160,16 @@ int main(int argc, char** argv) {
     // Create a ROS subscriber
     ros::Subscriber sub = nh.subscribe<sensor_msgs::PointCloud2>("livox/lidar", 1, Callback);
 
-    //ros::Subscriber imu_sub = nh.subscribe<sensor_msgs::Imu>("livox/imu", 1, imu_callback);
+    ros::Subscriber imu_sub = nh.subscribe<sensor_msgs::Imu>("livox/imu", 1, imu_callback);
 
     // Spin to continuously get data from callback
     ros::spin();
+
+    if (data_packet_ptr != NULL) {
+        free(data_packet_ptr->float_array_ptr);
+        free(data_packet_ptr);
+        std::cout << "\e[33m" << "Freed allocated memory." << "\e[m" << std::endl;
+    }
 
     return 0;
 }
