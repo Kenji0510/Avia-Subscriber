@@ -23,7 +23,32 @@ data_packet *data_packet_ptr = NULL;
 const int MAX_DATA_SIZE = 100;
 Eigen::Vector3d integrated_angle(0.0, 0.0, 0.0);
 const double time_interval = 1.0 / 200.0;
+size_t count = 0;
 
+std::vector<Eigen::Vector3d> angular_velocity_array;
+Eigen::Vector3d max_angular_velocity(0.0, 0.0, 0.0);
+
+
+void save_angular_velocity_data() {
+    std::ofstream file;
+    file.open("/home/kenji/ws_livox/src/lidar_subscriber/src/angle_velocity_data.txt");
+    for (int i = 0; i < angular_velocity_array.size(); i++) {
+        file << angular_velocity_array[i](0) << ", " << angular_velocity_array[i](1) << ", " << angular_velocity_array[i](2) << std::endl;
+    }
+    file.close();
+}
+
+void check_max_value(Eigen::Vector3d angular_velocity) {
+    if (angular_velocity(0) > max_angular_velocity(0)) {
+        max_angular_velocity(0) = angular_velocity(0);
+    }
+    if (angular_velocity(1) > max_angular_velocity(1)) {
+        max_angular_velocity(1) = angular_velocity(1);
+    }
+    if (angular_velocity(2) > max_angular_velocity(2)) {
+        max_angular_velocity(2) = angular_velocity(2);
+    }
+}
 
 std::string createTimestampedFilename(std::string path) {
     //std::string path = "/home/kenji/pcd";
@@ -64,6 +89,9 @@ void Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
 
     data_packet_ptr->unix_time = time(NULL);
     data_packet_ptr->num_points = source_downsampled->points_.size();
+    data_packet_ptr->angle_velocity_x = integrated_angle(0);
+    data_packet_ptr->angle_velocity_y = integrated_angle(1);
+    data_packet_ptr->angle_velocity_z = integrated_angle(2);
 
     // Transform the point cloud data from Open3D PointCloud to data_packet
     transform_data(source_downsampled, data_packet_ptr);
@@ -80,6 +108,8 @@ void Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
     std::string file_path = "/home/kenji/pcd/downsampled_pcd";
     std::string file_name = createTimestampedFilename(file_path);
 
+    count += 1;
+
     ROS_INFO("IMU Angular Velocity Data (Degree):");
     /*
     for (int i = 0; i < current_index; i++) {
@@ -87,7 +117,8 @@ void Callback(const sensor_msgs::PointCloud2ConstPtr& cloud_msg) {
     }
     current_index = 0;
     */
-    ROS_INFO("Integrated Angle: [%f, %f, %f]", integrated_angle(0), integrated_angle(1), integrated_angle(2));
+    //ROS_INFO("Integrated Angle: [%f, %f, %f]", integrated_angle(0), integrated_angle(1), integrated_angle(2));
+    ROS_INFO("Count: %ld Integrated Angle: [%f, %f, %f]", count, integrated_angle(0), integrated_angle(1), integrated_angle(2));
 
     // Save to a PCD file
     //pcl::io::savePCDFileASCII(fileName, *pcl_cloud);
@@ -142,6 +173,22 @@ void imu_callback(const sensor_msgs::ImuConstPtr& imu_msg) {
             imu_msg->angular_velocity.z * 180 / M_PI
     );
 
+    //check_max_value(angular_velocity);
+    //std::cout << "Max Angular Velocity: " << max_angular_velocity << std::endl;
+    //angular_velocity_array.push_back(angular_velocity);
+    // Filter out measurement errors
+    if (angular_velocity(0) < 1.65) {
+        angular_velocity(0) = 0.0;
+    }
+    if (angular_velocity(1) < 2.5) {
+        angular_velocity(1) = 0.0;
+    }
+    if (angular_velocity(2) < 1.6) {
+        angular_velocity(2) = 0.0;
+    }
+
+    std::cout << "Angular Velocity: " << angular_velocity << std::endl;
+
     integrated_angle += angular_velocity * time_interval;
 
     /*
@@ -169,6 +216,7 @@ int main(int argc, char** argv) {
         free(data_packet_ptr->float_array_ptr);
         free(data_packet_ptr);
         std::cout << "\e[33m" << "Freed allocated memory." << "\e[m" << std::endl;
+        //save_angular_velocity_data();
     }
 
     return 0;
