@@ -14,6 +14,7 @@ void downsample(std::shared_ptr<open3d::geometry::PointCloud>& source, std::shar
 
     auto finish_to_voxel = std::chrono::high_resolution_clock::now();
 
+    // For remove noise
     auto [remove_noise_pcd, ind] = voxel_grid.RemoveStatisticalOutliers(nb_neighbors, std_ratio);
     open3d::t::geometry::PointCloud remove_noise_pcd_legacy = std::move(remove_noise_pcd);
 
