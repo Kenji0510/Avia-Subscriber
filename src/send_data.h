@@ -11,11 +11,15 @@ extern "C" {
 #endif
 
 typedef struct {
-    time_t unix_time;
+    time_t initial_time;
+    time_t after_voxel_time;
     size_t num_points;
     double angle_velocity_x;
     double angle_velocity_y;
     double angle_velocity_z;
+    double roll;
+    double pitch;
+    double yaw;
     double *float_array_ptr;
 } data_packet;
 
