@@ -416,7 +416,7 @@ int send_data(const char* ip_addr, const char* port_num, data_packet* packet_ptr
     ev_break(loop, EVBREAK_ALL);
     ev_loop_destroy(loop);
 
-    printf("Unix time: %ld\n", packet_ptr->unix_time);
+    printf("Unix time: %ld\n", packet_ptr->initial_time);
     printf("Num points: %ld\n", packet_ptr->num_points);
     printf("First float: %f\n", packet_ptr->float_array_ptr[0]);
 
